@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Colorful Wormate.io-like Game</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #ff9a9e, #fad0c4);
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background: radial-gradient(circle, #111, #000);
+            position: relative;
+            z-index: 1;
+        }
+        #score {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            color: #ffffff;
+            text-shadow: 2px 2px 4px #000;
+            z-index: 2;
+        }
+        #minimap {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.5));
+            z-index: 2;
+        }
+        #loginPage {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+            z-index: 3;
+        }
+        #gameContainer {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="loginPage">
+        <h2>Login to Play</h2>
+        <input type="text" id="usernameInput" placeholder="Enter your name" required>
+        <button onclick="startGame()">Start Game</button>
+    </div>
+
+    <div id="gameContainer">
+        <div id="score">Points: 0</div>
+        <canvas id="gameCanvas"></canvas>
+        <canvas id="minimap"></canvas>
+    </div>
+
+    <script>
+        let playerName = '';
+
+        function startGame() {
+            const usernameInput = document.getElementById('usernameInput');
+            playerName = usernameInput.value.trim();
+            if (playerName !== '') {
+                document.getElementById('loginPage').style.display = 'none';
+                document.getElementById('gameContainer').style.display = 'block';
+                gameLoop();
+            } else {
+                alert('Please enter your name to start the game.');
+            }
+        }
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const minimapCanvas = document.getElementById('minimap');
+        const minimapCtx = minimapCanvas.getContext('2d');
+
+        const mapRadius = Math.min(canvas.width, canvas.height) / 0.3 - 10;
+        let points = 100;
+        let gameOver = false;
+
+        let player = {
+            x: 0,
+            y: 0,
+            size: 50,
+            color: '#ffd700',
+            segments: [],
+            speed: 3, normalSpeed: 3,
+            boostedSpeed: 6,
+            direction: { x: 1, y: 0 },
+            widthIncremented: false,
+        };
+
+        let food = [];
+        let target = { x: 0, y: 0 };
+        let mouseMoved = false;
+        let isBoosting = false;
+
+        function createFood() {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = Math.random() * mapRadius;
+            const colors = ['#ff4500', '#32cd32', '#1e90ff', '#ff69b4', '#ffa500', '#8a2be2'];
+            return {
+                x: Math.cos(angle) * radius,
+                y: Math.sin(angle) * radius,
+                size: 10,
+                color: colors[Math.floor(Math.random() * colors.length)],
+            };
+        }
+
+        for (let i = 0; i < 30; i++) {
+            food.push(createFood());
+        }
+
+        window.addEventListener('mousemove', function(event) {
+            if (!isMobile()) {
+                target.x = event.clientX - canvas.width / 2 + player.x;
+                target.y = event.clientY - canvas.height / 2 + player.y;
+                mouseMoved = true;
+            }
+        });
+
+        window.addEventListener('mousedown', function(event) {
+            if (!isMobile() && event.button === 0) {
+                player.speed = player.boostedSpeed;
+                isBoosting = true;
+            }
+        });
+
+        window.addEventListener('mouseup', function(event) {
+            if (!isMobile() && event.button === 0) {
+                player.speed = player.normalSpeed;
+                isBoosting = false;
+            }
+        });
+
+        canvas.addEventListener('touchstart', function(event) {
+            if (isMobile()) {
+                if (event.touches.length === 1) {
+                    const touch = event.touches[0];
+                    target.x = touch.clientX - canvas.width / 2 + player.x;
+                    target.y = touch.clientY - canvas.height / 2 + player.y;
+                    mouseMoved = true;
+                } else if (event.touches.length === 2) {
+                    player.speed = player.boostedSpeed;
+                }
+            }
+        });
+
+        canvas.addEventListener('touchmove', function(event) {
+            if (isMobile()) {
+                event.preventDefault();
+                const touch = event.touches[0];
+                target.x = touch.clientX - canvas.width / 2 + player.x;
+                target.y = touch.clientY - canvas.height / 2 + player.y;
+                mouseMoved = true;
+            }
+        });
+
+        canvas.addEventListener('touchend', function(event) {
+            if (isMobile()) {
+                if (event.touches.length < 2) {
+                    player.speed = player.normalSpeed;
+                }
+            }
+        });
+
+        function isMobile() {
+            return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            if (mouseMoved) {
+                const dx = target.x - player.x;
+                const dy = target.y - player.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance > player.speed) {
+                    player.direction.x = dx / distance;
+                    player.direction.y = dy / distance;
+                }
+                mouseMoved = false;
+            }
+
+            player.speed = isBoosting ? player.boostedSpeed : player.normalSpeed + player.size * 0.05;
+
+            player.x += player.direction.x * player.speed;
+            player.y += player.direction.y * player.speed;
+
+            const distanceFromCenter = Math.sqrt(player.x * player.x + player.y * player.y);
+            if (distanceFromCenter > mapRadius) {
+                gameOver = true;
+                alert('Game Over! You went out of bounds.');
+                return;
+            }
+
+            for (let i = food.length - 1; i >= 0; i--) {
+                const dx = player.x - food[i].x;
+                const dy = player.y - food[i].y;
+                if (dx * dx + dy * dy < player.size * player.size) {
+                    food.splice(i, 1);
+                    player.segments.push({ x: player.x, y: player.y });
+                    points += 10;
+                    player.size += 1;
+                    if (points >= 200 && !player.widthIncremented) {
+                        player.size *= 1.5; // Increase width once points reach a certain threshold
+                        player.widthIncremented = true;
+                    }
+                    document.getElementById('score').innerText = 'Points: ' + points;
+                    food.push(createFood());
+                }
+            }
+        }
+
+        function draw() {
+            if (gameOver) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.translate(canvas.width / 2 - player.x, canvas.height / 2 - player.y);
+
+            ctx.fillStyle = '#282828';
+            ctx.beginPath();
+            ctx.arc(0, 0, mapRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 5;
+            ctx.stroke();
+
+            for (let i = player.segments.length - 1; i > 0; i--) {
+                player.segments[i] = player.segments[i - 1];
+            }
+            if (player.segments.length) {
+                player.segments[0] = { x: player.x, y: player.y };
+            }
+            for (let segment of player.segments) {
+                drawWormSegment(segment.x, segment.y, player.size, false);
+            }
+
+            drawWormSegment(player.x, player.y, player.size, true);
+
+            for (let f of food) {
+                ctx.fillStyle = f.color;
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(playerName, player.x, player.y - player.size - 10);
+
+            ctx.restore();
+
+            drawMinimap();
+        }
+
+        function drawWormSegment(x, y, size, isHead) {
+            ctx.fillStyle = player.color;
+            ctx.beginPath();
+            ctx.ellipse(x, y, size * 1.5, size, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (isHead) {
+                const eyeOffsetX = (target.x - player.x) > 0 ? size * 0.6 : -size * 0.6;
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(x + eyeOffsetX, y - size * 0.3, size * 0.2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x - eyeOffsetX, y - size * 0.3, size * 0.2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawMinimap() {
+            minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+            minimapCtx.strokeStyle = 'white';
+            minimapCtx.beginPath();
+            minimapCtx.arc(minimapCanvas.width / 2, minimapCanvas.height / 2, minimapCanvas.width / 2 - 5, 0, Math.PI * 2);
+            minimapCtx.stroke();
+
+            const minimapX = (player.x / (mapRadius * 2)) * minimapCanvas.width + minimapCanvas.width / 2;
+            const minimapY = (player.y / (mapRadius * 2)) * minimapCanvas.height + minimapCanvas.height / 2;
+            minimapCtx.fillStyle = 'yellow';
+            minimapCtx.beginPath();
+            minimapCtx.arc(minimapX, minimapY, 5, 0, Math.PI * 2);
+            minimapCtx.fill();
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+    </script>
+</body>
+</html>
